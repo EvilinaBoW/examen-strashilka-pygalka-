@@ -1,0 +1,759 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace ConsoleApp18
+{
+    // ЗАДАЧА 1: Умные свойства с валидацией 
+
+    class RequiredAttribute : Attribute { }
+
+    class RangeAttribute : Attribute
+    {
+        public double Min { get; private set; }
+        public double Max { get; private set; }
+        public RangeAttribute(double min, double max)
+        {
+            Min = min; Max = max;
+        }
+    }
+
+    class StringLengthAttribute : Attribute
+    {
+        public int Min { get; private set; }
+        public int Max { get; private set; }
+        public StringLengthAttribute(int min, int max)
+        {
+            Min = min; Max = max;
+        }
+    }
+
+    class EmailAttribute : Attribute { }
+
+    class PhoneAttribute : Attribute { }
+
+    class RegexPatternAttribute : Attribute
+    {
+        public string Pattern { get; private set; }
+        public RegexPatternAttribute(string pattern) { Pattern = pattern; }
+    }
+
+    abstract class ValidatableObject : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        public Dictionary<string, List<string>> ValidationErrors { get; private set; }
+
+        protected ValidatableObject()
+        {
+            ValidationErrors = new Dictionary<string, List<string>>();
+        }
+
+        protected void OnPropertyChanged(string name)
+        {
+            if (PropertyChanged != null)
+                PropertyChanged(this, new PropertyChangedEventArgs(name));
+        }
+
+        protected bool SetProperty<T>(ref T field, T value, string propertyName)
+        {
+            if (object.Equals(field, value)) return false;
+            field = value;
+            ValidateProperty(propertyName, value);
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        private void AddError(string propertyName, string message)
+        {
+            if (!ValidationErrors.ContainsKey(propertyName))
+                ValidationErrors[propertyName] = new List<string>();
+            ValidationErrors[propertyName].Add(message);
+        }
+
+        private void ClearErrors(string propertyName)
+        {
+            if (ValidationErrors.ContainsKey(propertyName))
+                ValidationErrors.Remove(propertyName);
+        }
+
+        private void ValidateProperty(string propertyName, object value)
+        {
+            ClearErrors(propertyName);
+
+            PropertyInfo prop = GetType().GetProperty(propertyName);
+            if (prop == null) return;
+
+            object[] attrs = prop.GetCustomAttributes(true);
+
+            foreach (object a in attrs)
+            {
+                if (a is RequiredAttribute)
+                {
+                    if (value == null ||
+                        (value is string && string.IsNullOrWhiteSpace((string)value)))
+                    {
+                        AddError(propertyName, "Поле обязательно");
+                    }
+                }
+                else if (a is RangeAttribute)
+                {
+                    RangeAttribute r = (RangeAttribute)a;
+                    if (value != null)
+                    {
+                        double d;
+                        if (double.TryParse(value.ToString(), out d))
+                        {
+                            if (d < r.Min || d > r.Max)
+                                AddError(propertyName, "Выход за диапазон");
+                        }
+                    }
+                }
+                else if (a is StringLengthAttribute)
+                {
+                    StringLengthAttribute s = (StringLengthAttribute)a;
+                    string str = value == null ? "" : value.ToString();
+                    if (str.Length < s.Min || str.Length > s.Max)
+                        AddError(propertyName, "Длина строки вне диапазона");
+                }
+                else if (a is EmailAttribute)
+                {
+                    string str = value == null ? "" : value.ToString();
+                    if (!Regex.IsMatch(str, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                        AddError(propertyName, "Неверный Email");
+                }
+                else if (a is PhoneAttribute)
+                {
+                    string str = value == null ? "" : value.ToString();
+                    if (!Regex.IsMatch(str, @"^\+?\d{7,15}$"))
+                        AddError(propertyName, "Неверный телефон");
+                }
+                else if (a is RegexPatternAttribute)
+                {
+                    RegexPatternAttribute rp = (RegexPatternAttribute)a;
+                    string str = value == null ? "" : value.ToString();
+                    if (!Regex.IsMatch(str, rp.Pattern))
+                        AddError(propertyName, "Строка не соответствует шаблону");
+                }
+            }
+        }
+
+        public bool IsValid()
+        {
+            ValidationErrors.Clear();
+            PropertyInfo[] props = GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
+            foreach (PropertyInfo p in props)
+            {
+                object val = p.GetValue(this, null);
+                ValidateProperty(p.Name, val);
+            }
+            return ValidationErrors.Count == 0;
+        }
+    }
+
+    class User : ValidatableObject
+    {
+        private string _firstName;
+        private string _lastName;
+        private int _age;
+        private string _email;
+        private string _phone;
+        private string _login;
+        private string _password;
+        private string _city;
+        private string _zip;
+        private string _website;
+        private string _passport;
+
+        public string FirstName
+        {
+            get { return _firstName; }
+            set { SetProperty(ref _firstName, value, "FirstName"); }
+        }
+
+        public string LastName
+        {
+            get { return _lastName; }
+            set { SetProperty(ref _lastName, value, "LastName"); }
+        }
+
+        public int Age
+        {
+            get { return _age; }
+            set { SetProperty(ref _age, value, "Age"); }
+        }
+
+        public string Email
+        {
+            get { return _email; }
+            set { SetProperty(ref _email, value, "Email"); }
+        }
+
+        public string Phone
+        {
+            get { return _phone; }
+            set { SetProperty(ref _phone, value, "Phone"); }
+        }
+
+        public string Login
+        {
+            get { return _login; }
+            set { SetProperty(ref _login, value, "Login"); }
+        }
+
+        public string Password
+        {
+            get { return _password; }
+            set { SetProperty(ref _password, value, "Password"); }
+        }
+
+        public string City
+        {
+            get { return _city; }
+            set { SetProperty(ref _city, value, "City"); }
+        }
+
+        public string Zip
+        {
+            get { return _zip; }
+            set { SetProperty(ref _zip, value, "Zip"); }
+        }
+
+        public string Website
+        {
+            get { return _website; }
+            set { SetProperty(ref _website, value, "Website"); }
+        }
+
+        public string Passport
+        {
+            get { return _passport; }
+            set { SetProperty(ref _passport, value, "Passport"); }
+        }
+
+        public new bool IsValid()
+        {
+            ValidationErrors.Clear();
+
+            if (string.IsNullOrWhiteSpace(FirstName) || FirstName.Length < 2 || FirstName.Length > 50)
+                AddError("FirstName", "Имя: 2-50 символов");
+            if (string.IsNullOrWhiteSpace(LastName) || LastName.Length < 2 || LastName.Length > 50)
+                AddError("LastName", "Фамилия: 2-50 символов");
+            if (Age < 0 || Age > 120)
+                AddError("Age", "Возраст: 0-120");
+            if (!string.IsNullOrEmpty(Email) && !Regex.IsMatch(Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                AddError("Email", "Неверный Email");
+            if (!string.IsNullOrEmpty(Phone) && !Regex.IsMatch(Phone, @"^\+?\d{7,15}$"))
+                AddError("Phone", "Неверный телефон");
+            if (string.IsNullOrWhiteSpace(Login) || Login.Length < 3 || Login.Length > 30)
+                AddError("Login", "Логин: 3-30 символов");
+            if (string.IsNullOrWhiteSpace(Password) || Password.Length < 6 || Password.Length > 50)
+                AddError("Password", "Пароль: 6-50 символов");
+            if (!string.IsNullOrEmpty(Zip) && !Regex.IsMatch(Zip, @"^\d{5,6}$"))
+                AddError("Zip", "Индекс: 5-6 цифр");
+            if (!string.IsNullOrEmpty(Website) && !Regex.IsMatch(Website, @"^https?://"))
+                AddError("Website", "Сайт должен начинаться с http(s)://");
+
+            return ValidationErrors.Count == 0;
+        }
+
+        private void AddError(string propertyName, string message)
+        {
+            if (!ValidationErrors.ContainsKey(propertyName))
+                ValidationErrors[propertyName] = new List<string>();
+            ValidationErrors[propertyName].Add(message);
+        }
+    }
+
+    // ЗАДАЧА 2: Fluent Builder для конфигурации
+
+    class DatabaseConfig
+    {
+        public string Host { get; private set; }
+        public int Port { get; private set; }
+        public string Database { get; private set; }
+        public string Username { get; private set; }
+        public string Password { get; private set; }
+
+        public DatabaseConfig(string host, int port, string database, string username, string password)
+        {
+            Host = host;
+            Port = port;
+            Database = database;
+            Username = username;
+            Password = password;
+        }
+    }
+
+    class LoggingConfig
+    {
+        public string Level { get; private set; }
+        public string FilePath { get; private set; }
+        public int MaxFileSize { get; private set; }
+        public int MaxFiles { get; private set; }
+
+        public LoggingConfig(string level, string filePath, int maxFileSize, int maxFiles)
+        {
+            Level = level;
+            FilePath = filePath;
+            MaxFileSize = maxFileSize;
+            MaxFiles = maxFiles;
+        }
+    }
+
+    class CacheConfig
+    {
+        public bool Enabled { get; private set; }
+        public int Duration { get; private set; }
+        public int MaxItems { get; private set; }
+
+        public CacheConfig(bool enabled, int duration, int maxItems)
+        {
+            Enabled = enabled;
+            Duration = duration;
+            MaxItems = maxItems;
+        }
+    }
+
+    class EmailConfig
+    {
+        public string SmtpHost { get; private set; }
+        public int Port { get; private set; }
+        public string From { get; private set; }
+        public string Password { get; private set; }
+
+        public EmailConfig(string smtpHost, int port, string from, string password)
+        {
+            SmtpHost = smtpHost;
+            Port = port;
+            From = from;
+            Password = password;
+        }
+    }
+
+    class Configuration
+    {
+        public DatabaseConfig Database { get; private set; }
+        public LoggingConfig Logging { get; private set; }
+        public CacheConfig Cache { get; private set; }
+        public EmailConfig Email { get; private set; }
+
+        public Configuration(DatabaseConfig db, LoggingConfig log, CacheConfig cache, EmailConfig email)
+        {
+            Database = db;
+            Logging = log;
+            Cache = cache;
+            Email = email;
+        }
+    }
+
+    class DatabaseConfigBuilder
+    {
+        private string _host;
+        private int _port;
+        private string _database;
+        private string _username;
+        private string _password;
+
+        public DatabaseConfigBuilder SetHost(string host) { _host = host; return this; }
+        public DatabaseConfigBuilder SetPort(int port) { _port = port; return this; }
+        public DatabaseConfigBuilder SetDatabase(string db) { _database = db; return this; }
+        public DatabaseConfigBuilder SetUsername(string u) { _username = u; return this; }
+        public DatabaseConfigBuilder SetPassword(string p) { _password = p; return this; }
+
+        public DatabaseConfig Build()
+        {
+            if (string.IsNullOrEmpty(_host)) throw new Exception("DB Host required");
+            if (_port <= 0) throw new Exception("DB Port must be >0");
+            if (string.IsNullOrEmpty(_database)) throw new Exception("DB name required");
+            return new DatabaseConfig(_host, _port, _database, _username, _password);
+        }
+    }
+
+    class LoggingConfigBuilder
+    {
+        private string _level;
+        private string _filePath;
+        private int _maxFileSize;
+        private int _maxFiles;
+
+        public LoggingConfigBuilder SetLevel(string l) { _level = l; return this; }
+        public LoggingConfigBuilder SetFilePath(string p) { _filePath = p; return this; }
+        public LoggingConfigBuilder SetMaxFileSize(int s) { _maxFileSize = s; return this; }
+        public LoggingConfigBuilder SetMaxFiles(int f) { _maxFiles = f; return this; }
+
+        public LoggingConfig Build()
+        {
+            if (string.IsNullOrEmpty(_level)) _level = "INFO";
+            if (string.IsNullOrEmpty(_filePath)) _filePath = "app.log";
+            if (_maxFileSize <= 0) _maxFileSize = 1024 * 1024;
+            if (_maxFiles <= 0) _maxFiles = 5;
+            return new LoggingConfig(_level, _filePath, _maxFileSize, _maxFiles);
+        }
+    }
+
+    class CacheConfigBuilder
+    {
+        private bool _enabled;
+        private int _duration;
+        private int _maxItems;
+
+        public CacheConfigBuilder SetEnabled(bool e) { _enabled = e; return this; }
+        public CacheConfigBuilder SetDuration(int d) { _duration = d; return this; }
+        public CacheConfigBuilder SetMaxItems(int m) { _maxItems = m; return this; }
+
+        public CacheConfig Build()
+        {
+            if (_enabled && _duration <= 0) throw new Exception("Cache duration must be >0");
+            if (_enabled && _maxItems <= 0) throw new Exception("Cache max items must be >0");
+            return new CacheConfig(_enabled, _duration, _maxItems);
+        }
+    }
+
+    class EmailConfigBuilder
+    {
+        private string _smtpHost;
+        private int _port;
+        private string _from;
+        private string _password;
+
+        public EmailConfigBuilder SetSmtpHost(string h) { _smtpHost = h; return this; }
+        public EmailConfigBuilder SetPort(int p) { _port = p; return this; }
+        public EmailConfigBuilder SetFrom(string f) { _from = f; return this; }
+        public EmailConfigBuilder SetPassword(string pw) { _password = pw; return this; }
+
+        public EmailConfig Build()
+        {
+            if (string.IsNullOrEmpty(_smtpHost)) throw new Exception("SmtpHost required");
+            if (_port <= 0) throw new Exception("Smtp port must be >0");
+            if (string.IsNullOrEmpty(_from)) throw new Exception("From required");
+            return new EmailConfig(_smtpHost, _port, _from, _password);
+        }
+    }
+
+    class ConfigurationBuilder
+    {
+        public DatabaseConfigBuilder Database { get; private set; }
+        public LoggingConfigBuilder Logging { get; private set; }
+        public CacheConfigBuilder Cache { get; private set; }
+        public EmailConfigBuilder Email { get; private set; }
+
+        public ConfigurationBuilder()
+        {
+            Database = new DatabaseConfigBuilder();
+            Logging = new LoggingConfigBuilder();
+            Cache = new CacheConfigBuilder();
+            Email = new EmailConfigBuilder();
+        }
+
+        public Configuration Build()
+        {
+            DatabaseConfig db = Database.Build();
+            LoggingConfig log = Logging.Build();
+            CacheConfig cache = Cache.Build();
+            EmailConfig email = Email.Build();
+            return new Configuration(db, log, cache, email);
+        }
+
+        public static string ToJson(Configuration cfg)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{");
+            sb.Append("\"Database\":{");
+            sb.AppendFormat("\"Host\":\"{0}\",\"Port\":{1},\"Database\":\"{2}\",\"Username\":\"{3}\",\"Password\":\"{4}\"",
+                cfg.Database.Host, cfg.Database.Port, cfg.Database.Database, cfg.Database.Username, cfg.Database.Password);
+            sb.Append("},");
+
+            sb.Append("\"Logging\":{");
+            sb.AppendFormat("\"Level\":\"{0}\",\"FilePath\":\"{1}\",\"MaxFileSize\":{2},\"MaxFiles\":{3}",
+                cfg.Logging.Level, cfg.Logging.FilePath, cfg.Logging.MaxFileSize, cfg.Logging.MaxFiles);
+            sb.Append("},");
+
+            sb.Append("\"Cache\":{");
+            sb.AppendFormat("\"Enabled\":{0},\"Duration\":{1},\"MaxItems\":{2}",
+                cfg.Cache.Enabled ? "true" : "false", cfg.Cache.Duration, cfg.Cache.MaxItems);
+            sb.Append("},");
+
+            sb.Append("\"Email\":{");
+            sb.AppendFormat("\"SmtpHost\":\"{0}\",\"Port\":{1},\"From\":\"{2}\",\"Password\":\"{3}\"",
+                cfg.Email.SmtpHost, cfg.Email.Port, cfg.Email.From, cfg.Email.Password);
+            sb.Append("}");
+
+            sb.Append("}");
+            return sb.ToString();
+        }
+    }
+
+    // ЗАДАЧА 3: Простой прокси через делегаты
+
+    interface IMyService
+    {
+        int Add(int a, int b);
+        string Concat(string a, string b);
+        void DoWork();
+        int GetRandom();
+        string GetTime();
+    }
+
+    class MyService : IMyService
+    {
+        private Random _rnd = new Random();
+
+        public int Add(int a, int b)
+        {
+            Thread.Sleep(50);
+            return a + b;
+        }
+
+        public string Concat(string a, string b)
+        {
+            Thread.Sleep(30);
+            return a + b;
+        }
+
+        public void DoWork()
+        {
+            Thread.Sleep(10);
+            if (DateTime.Now.Ticks % 2 == 0)
+                throw new Exception("Случайная ошибка");
+        }
+
+        public int GetRandom()
+        {
+            Thread.Sleep(20);
+            return _rnd.Next(1, 100);
+        }
+
+        public string GetTime()
+        {
+            return DateTime.Now.ToLongTimeString();
+        }
+    }
+
+    class LoggingProxy : IMyService
+    {
+        private readonly IMyService _target;
+        private readonly Dictionary<string, int> _callCounts = new Dictionary<string, int>();
+        private readonly Dictionary<string, object> _cache = new Dictionary<string, object>();
+
+        public Dictionary<string, int> CallCounts { get { return _callCounts; } }
+
+        public LoggingProxy(IMyService target)
+        {
+            _target = target;
+        }
+
+        public int Add(int a, int b)
+        {
+            return (int)Invoke("Add", new object[] { a, b }, () => _target.Add(a, b));
+        }
+
+        public string Concat(string a, string b)
+        {
+            return (string)Invoke("Concat", new object[] { a, b }, () => _target.Concat(a, b));
+        }
+
+        public void DoWork()
+        {
+            Invoke("DoWork", new object[] { }, () => { _target.DoWork(); return null; });
+        }
+
+        public int GetRandom()
+        {
+            return (int)Invoke("GetRandom", new object[] { }, () => _target.GetRandom());
+        }
+
+        public string GetTime()
+        {
+            return (string)Invoke("GetTime", new object[] { }, () => _target.GetTime());
+        }
+
+        private object Invoke(string methodName, object[] args, Func<object> action)
+        {
+            if (!_callCounts.ContainsKey(methodName)) _callCounts[methodName] = 0;
+            _callCounts[methodName]++;
+
+            Console.WriteLine("=> Вход в метод {0}({1})", methodName,
+                args.Length == 0 ? "" : string.Join(", ", args));
+
+            Stopwatch sw = Stopwatch.StartNew();
+            try
+            {
+                bool useCache = args.Length == 0 && _cache.ContainsKey(methodName);
+                object result;
+                if (useCache)
+                {
+                    Console.WriteLine("   Используем кеш");
+                    result = _cache[methodName];
+                }
+                else
+                {
+                    result = action();
+                    if (args.Length == 0)
+                        _cache[methodName] = result;
+                }
+                sw.Stop();
+                Console.WriteLine("<= Выход из метода {0}, время {1}мс, результат: {2}",
+                    methodName, sw.ElapsedMilliseconds, result);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                Console.WriteLine("!! Исключение в методе {0}: {1}", methodName, ex.Message);
+                throw;
+            }
+        }
+    }
+
+    internal class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.WriteLine("Выберите задание билета 10:");
+            Console.WriteLine("1 - Умные свойства с валидацией");
+            Console.WriteLine("2 - Fluent Configuration Builder");
+            Console.WriteLine("3 - Logging Proxy (AOP)");
+            Console.Write("Введите номер: ");
+            string choice = Console.ReadLine();
+
+            switch (choice)
+            {
+                case "1":
+                    TestValidation();
+                    break;
+                case "2":
+                    TestConfigurationBuilder();
+                    break;
+                case "3":
+                    TestLoggingProxy();
+                    break;
+                default:
+                    Console.WriteLine("Неизвестный выбор.");
+                    break;
+            }
+
+            Console.WriteLine("Готово. Нажмите Enter.");
+            Console.ReadLine();
+        }
+
+        static void TestValidation()
+        {
+            User u = new User();
+
+            u.FirstName = "A";
+            u.LastName = "Petrov";
+            u.Age = 150;
+            u.Email = "wrong_email";
+            u.Phone = "123";
+            u.Login = "lg";
+            u.Password = "123";
+            u.City = "M";
+            u.Zip = "abc";
+            u.Website = "site.com";
+            u.Passport = "123";
+
+            bool ok = u.IsValid();
+            Console.WriteLine("IsValid: " + ok);
+            foreach (var kv in u.ValidationErrors)
+            {
+                Console.WriteLine("Свойство: " + kv.Key);
+                foreach (string err in kv.Value)
+                    Console.WriteLine("  - " + err);
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Исправляем данные...");
+            u.FirstName = "Ivan";
+            u.Age = 25;
+            u.Email = "test@example.com";
+            u.Phone = "+71234567890";
+            u.Login = "goodlogin";
+            u.Password = "strongpass";
+            u.City = "Moscow";
+            u.Zip = "123456";
+            u.Website = "https://mysite.com";
+            u.Passport = "1234567";
+
+            ok = u.IsValid();
+            Console.WriteLine("IsValid: " + ok);
+            if (!ok)
+            {
+                foreach (var kv in u.ValidationErrors)
+                {
+                    Console.WriteLine("Свойство: " + kv.Key);
+                    foreach (string err in kv.Value)
+                        Console.WriteLine("  - " + err);
+                }
+            }
+            else
+            {
+                Console.WriteLine("Ошибок нет.");
+            }
+        }
+
+        static void TestConfigurationBuilder()
+        {
+            ConfigurationBuilder builder = new ConfigurationBuilder();
+            builder.Database
+                .SetHost("localhost")
+                .SetPort(5432)
+                .SetDatabase("appdb")
+                .SetUsername("user")
+                .SetPassword("pwd");
+            builder.Logging
+                .SetLevel("DEBUG")
+                .SetFilePath("log.txt")
+                .SetMaxFileSize(1024 * 1024)
+                .SetMaxFiles(3);
+            builder.Cache
+                .SetEnabled(true)
+                .SetDuration(300)
+                .SetMaxItems(1000);
+            builder.Email
+                .SetSmtpHost("smtp.mail.com")
+                .SetPort(587)
+                .SetFrom("noreply@mail.com")
+                .SetPassword("secret");
+
+            Configuration cfg = builder.Build();
+            string json = ConfigurationBuilder.ToJson(cfg);
+            Console.WriteLine("JSON конфигурации:");
+            Console.WriteLine(json);
+        }
+
+        static void TestLoggingProxy()
+        {
+            IMyService real = new MyService();
+            LoggingProxy proxy = new LoggingProxy(real);
+
+            Console.WriteLine("Вызовы методов через прокси:");
+            Console.WriteLine("Add(2,3) = " + proxy.Add(2, 3));
+            Console.WriteLine("Concat(\"Hello\",\" World\") = " + proxy.Concat("Hello", " World"));
+
+            try
+            {
+                proxy.DoWork();
+            }
+            catch { }
+
+            Console.WriteLine("GetRandom() = " + proxy.GetRandom());
+            Console.WriteLine("GetRandom() второй раз (кеш) = " + proxy.GetRandom());
+            Console.WriteLine("GetTime() = " + proxy.GetTime());
+            Console.WriteLine("GetTime() второй раз (кеш) = " + proxy.GetTime());
+
+            Console.WriteLine();
+            Console.WriteLine("Статистика вызовов:");
+            foreach (var kv in proxy.CallCounts)
+                Console.WriteLine("Метод {0} вызван {1} раз(а)", kv.Key, kv.Value);
+        }
+    }
+}
